@@ -1,0 +1,363 @@
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include <algorithm>
+
+using namespace std;
+
+// Class for random number generation, as required in the assignment
+class RandGen {
+private:
+    unsigned int seed;
+public:
+    RandGen() { seed = 0; }
+    void SetSeed(int s) { seed = s; }
+    int RandInt(int min, int max) {
+        // Using the same formula but ensuring consistent behavior
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        return min + (seed % (max - min + 1));
+    }
+};
+
+// Player struct as defined in the assignment
+struct Player {
+    string name;
+    vector<string> tasks;
+    vector<int> rolls;
+    int baseScore;
+    int score;
+    int numTasks;
+};
+
+// Function prototypes
+void cleanString(string& s);
+void swapStrings(string& a, string& b);
+bool loadPlayers(const string& filename, vector<Player>& players);
+bool loadPlayerData(const string& filename, vector<Player>& players);
+bool loadTasks(const string& filename, vector<string>& baseTasks);
+void shuffleTasks(vector<string>& tasks, RandGen& rng);
+void assignTasks(vector<Player>& players, const vector<string>& baseTasks, RandGen& rng);
+void simulateGame(vector<Player>& players, RandGen& rng, vector<vector<int>>& rollMatrix);
+void printMenu();
+void showPlayer(const vector<Player>& players, const string& name);
+void showHighestScorer(const vector<Player>& players);
+void showTaskStats(const vector<Player>& players);
+void showTotalSixes(const vector<vector<int>>& rollMatrix);
+
+// Helper function to clean strings (remove trailing \r)
+void cleanString(string& s) {
+    if (!s.empty() && s.back() == '\r') s.pop_back();
+}
+
+// Function to swap two strings
+void swapStrings(string& a, string& b) {
+    string temp = a;
+    a = b;
+    b = temp;
+}
+
+// Load player names from file
+bool loadPlayers(const string& filename, vector<Player>& players) {
+    ifstream file(filename);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    string line;
+    while (getline(file, line)) {
+        cleanString(line);
+        if (!line.empty()) {
+            Player player;
+            player.name = line;
+            player.baseScore = 0;
+            player.score = 0;
+            player.numTasks = 0;
+            players.push_back(player);
+        }
+    }
+    file.close();
+    return true;
+}
+
+// Load player data (num tasks and base scores)
+bool loadPlayerData(const string& filename, vector<Player>& players) {
+    ifstream file(filename);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    string line;
+    int playerIndex = 0;
+    while (getline(file, line) && playerIndex < players.size()) {
+        cleanString(line);
+        if (!line.empty()) {
+            size_t commaPos = line.find(',');
+            if (commaPos != string::npos) {
+                string numTasksStr = line.substr(0, commaPos);
+                string baseScoreStr = line.substr(commaPos + 1);
+                
+                try {
+                    players[playerIndex].numTasks = stoi(numTasksStr);
+                    players[playerIndex].baseScore = stoi(baseScoreStr);
+                    players[playerIndex].score = players[playerIndex].baseScore; // Initialize score with base score
+                }
+                catch (...) {
+                    return false;
+                }
+            }
+            playerIndex++;
+        }
+    }
+    file.close();
+    return true;
+}
+
+// Load tasks from file
+bool loadTasks(const string& filename, vector<string>& baseTasks) {
+    ifstream file(filename);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    string line;
+    while (getline(file, line)) {
+        cleanString(line);
+        if (!line.empty()) {
+            baseTasks.push_back(line);
+        }
+    }
+    file.close();
+    return true;
+}
+
+// Shuffle tasks using Fisher-Yates algorithm as specified in the assignment
+void shuffleTasks(vector<string>& tasks, RandGen& rng) {
+    for (int i = tasks.size() - 1; i > 0; i--) {
+        int j = rng.RandInt(0, i);
+        swapStrings(tasks[i], tasks[j]);
+    }
+}
+
+// Assign tasks to players
+void assignTasks(vector<Player>& players, const vector<string>& baseTasks, RandGen& rng) {
+    // Reset RNG to maintain deterministic behavior
+    RandGen localRng;
+    localRng.SetSeed(0);
+    
+    for (auto& player : players) {
+        vector<string> tasksCopy = baseTasks;
+        shuffleTasks(tasksCopy, localRng);
+        
+        player.tasks.clear();
+        for (int i = 0; i < player.numTasks && i < tasksCopy.size(); i++) {
+            player.tasks.push_back(tasksCopy[i]);
+        }
+    }
+}
+
+// Simulate the game
+void simulateGame(vector<Player>& players, RandGen& rng, vector<vector<int>>& rollMatrix) {
+    rollMatrix.clear();
+    
+    // Reset RNG to maintain deterministic behavior
+    RandGen localRng;
+    localRng.SetSeed(0);
+    
+    for (auto& player : players) {
+        player.rolls.clear();
+        vector<int> playerRolls;
+        
+        for (const auto& task : player.tasks) {
+            int roll = localRng.RandInt(1, 6);
+            player.rolls.push_back(roll);
+            playerRolls.push_back(roll);
+            
+            // Apply task logic
+            if (task == "Treasure") {
+                player.score += 20;
+            } 
+            else if (task == "Trap") {
+                player.score -= 10;
+            } 
+            else if (task == "Rest") {
+                player.score += 5;
+            } 
+            else if (task == "Jackpot") {
+                player.score += 50;
+            } 
+            else if (task == "Battle") {
+                if (roll > 3) {
+                    player.score += 30;
+                } else {
+                    player.score -= 15;
+                }
+            } 
+            else if (task == "DoublePoints") {
+                player.score += 2 * roll;
+            }
+            // For "Nothing", no score change
+        }
+        
+        rollMatrix.push_back(playerRolls);
+    }
+}
+
+// Print the menu
+void printMenu() {
+    cout << endl << "Menu:" << endl;
+    cout << "1. Show player stats" << endl;
+    cout << "2. Show highest scorer" << endl;
+    cout << "3. Show task statistics" << endl;
+    cout << "4. Show total number of 6s" << endl;
+    cout << "5. Exit" << endl;
+}
+
+// Show player stats
+void showPlayer(const vector<Player>& players, const string& name) {
+    for (const auto& player : players) {
+        if (player.name == name) {
+            cout << "Name: " << player.name << endl;
+            cout << "Score: " << player.score << endl;
+            cout << "Tasks and Rolls:" << endl;
+            
+            for (size_t i = 0; i < player.tasks.size(); i++) {
+                cout << "  " << player.tasks[i] << " -> " << player.rolls[i] << endl;
+            }
+            return;
+        }
+    }
+    cout << "Player not found." << endl;
+}
+
+// Show highest scorer
+void showHighestScorer(const vector<Player>& players) {
+    if (players.empty()) {
+        cout << "No players available." << endl;
+        return;
+    }
+    
+    const Player* highestScorer = &players[0];
+    for (const auto& player : players) {
+        if (player.score > highestScorer->score) {
+            highestScorer = &player;
+        }
+    }
+    
+    cout << "Highest Scorer: " << highestScorer->name << " with " << highestScorer->score << " points" << endl;
+}
+
+// Show task statistics
+void showTaskStats(const vector<Player>& players) {
+    // Define the fixed task order as specified in the assignment
+    vector<string> taskOrder = {"Treasure", "Trap", "Battle", "Rest", "Jackpot", "DoublePoints", "Nothing"};
+    vector<int> taskCounts(taskOrder.size(), 0);
+    
+    // Count occurrences of each task
+    for (const auto& player : players) {
+        for (const auto& task : player.tasks) {
+            for (size_t i = 0; i < taskOrder.size(); i++) {
+                if (task == taskOrder[i]) {
+                    taskCounts[i]++;
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Display task statistics
+    cout << "Task Statistics:" << endl;
+    for (size_t i = 0; i < taskOrder.size(); i++) {
+        cout << taskOrder[i] << ": " << taskCounts[i] << endl;
+    }
+}
+
+// Show total number of 6s rolled
+void showTotalSixes(const vector<vector<int>>& rollMatrix) {
+    int totalSixes = 0;
+    
+    for (const auto& playerRolls : rollMatrix) {
+        for (int roll : playerRolls) {
+            if (roll == 6) {
+                totalSixes++;
+            }
+        }
+    }
+    
+    cout << "Total number of 6s: " << totalSixes << endl;
+}
+
+int main() {
+    vector<Player> players;
+    vector<string> baseTasks;
+    vector<vector<int>> rollMatrix;
+    RandGen rng;
+    rng.SetSeed(0);  // Set seed to 0 as specified
+    
+    // Ask for file names
+    string playersFile, playerDataFile, tasksFile;
+    cout << "Enter players file name: ";
+    cin >> playersFile;
+    
+    // Load players
+    if (!loadPlayers(playersFile, players)) {
+        cout << "Error loading players file." << endl;
+        return 1;
+    }
+    
+    // Load player data
+    cout << "Enter player data file name (tasks & base scores): ";
+    cin >> playerDataFile;
+    
+    if (!loadPlayerData(playerDataFile, players)) {
+        cout << "Error loading player data." << endl;
+        return 1;
+    }
+    
+    // Load tasks
+    cout << "Enter tasks file name: ";
+    cin >> tasksFile;
+    
+    if (!loadTasks(tasksFile, baseTasks)) {
+        cout << "Error loading tasks file." << endl;
+        return 1;
+    }
+    
+    // Assign tasks and simulate game
+    assignTasks(players, baseTasks, rng);
+    simulateGame(players, rng, rollMatrix);
+    
+    // Menu loop
+    int choice;
+    do {
+        printMenu();
+        cout << "Enter choice: ";
+        cin >> choice;
+        
+        switch (choice) {
+            case 1: {
+                string playerName;
+                cout << "Enter player name: ";
+                cin >> playerName;
+                showPlayer(players, playerName);
+                break;
+            }
+            case 2:
+                showHighestScorer(players);
+                break;
+            case 3:
+                showTaskStats(players);
+                break;
+            case 4:
+                showTotalSixes(rollMatrix);
+                break;
+            case 5:
+                cout << "Goodbye!" << endl;
+                break;
+            default:
+                cout << "Invalid choice. Please try again." << endl;
+        }
+    } while (choice != 5);
+    
+    return 0;
+}
